@@ -70,6 +70,9 @@ class Countdown(ActionBase):
             self.finish_command_executed = True
 
     def run_command(self, command):
+        if command is None:
+            return
+        
         command = command.strip()
 
         if command in [None, ""]:
