@@ -14,6 +14,7 @@ from .progress import create_progress_ring
 
 # Import python modules
 import os
+from pathlib import Path
 
 # Import gtk modules - used for the config rows
 import gi
@@ -29,6 +30,10 @@ class Countdown(ActionBase):
         self.start_time = None
         self.paused_time = None
         self.finish_command_executed: bool = False
+        self.output_enabled = False
+        self.output_file = None
+        self.last_written = None
+        self.zero_text = "00:00"
 
     def get_remaining_time(self) -> int:
         if self.start_time is None:
@@ -53,7 +58,18 @@ class Countdown(ActionBase):
 
         self.set_center_label(time_string)
 
+        if self.output_enabled and self.output_file:
+            output_string = self.zero_text if (
+                remaining_seconds + remaining_minutes * 60 + remaining_hours * 3600 == 0
+            ) else time_string
+
+            if self.last_written != output_string:
+                self.output_file.parent.mkdir(parents=True, exist_ok=True)
+                self.output_file.write_text(output_string, encoding="utf-8")
+                self.last_written = output_string
+
         progress = 1
+        
         if self.duration > 0: # avoid div by 0
             progress = remaining_time / self.duration
         if remaining_seconds + remaining_minutes * 60 + remaining_hours * 3600 == 0:
@@ -64,15 +80,18 @@ class Countdown(ActionBase):
         if progress == 0:
             if not self.finish_command_executed:
                 # run command
-                command = self.get_settings().get("command")
+                command = self.get_settings().get("command", "")
                 self.run_command(command)
 
             self.finish_command_executed = True
 
     def run_command(self, command):
+        if not command:
+            return
+
         command = command.strip()
 
-        if command in [None, ""]:
+        if command == "":
             return
 
         if is_flatpak():
@@ -84,6 +103,12 @@ class Countdown(ActionBase):
     def on_ready(self) -> None:
         settings = self.get_settings()
         self.duration = settings.get("duration", 30)
+        self.output_enabled = settings.get("output_enabled", False)
+
+        output_file = settings.get("output_file", "")
+        self.output_file = Path(output_file).expanduser() if output_file else None
+
+        self.zero_text = settings.get("zero_text", "00:00")
         self.on_tick()
 
     def on_tick(self) -> None:
@@ -137,18 +162,54 @@ class Countdown(ActionBase):
 
         self.command_row = Adw.EntryRow(title="Command to run after end of timer")
 
+        # Compatible con libadwaita < 1.4 (Adw.SwitchRow no existe antes de 1.4)
+        self.output_enabled_row = Adw.ActionRow(title="Write countdown to file")
+        self.output_enabled_row.set_subtitle("Enable text output for OBS or other applications")
+        self.output_enabled_switch = Gtk.Switch()
+        self.output_enabled_switch.set_valign(Gtk.Align.CENTER)
+        self.output_enabled_row.add_suffix(self.output_enabled_switch)
+        self.output_enabled_row.set_activatable_widget(self.output_enabled_switch)
+
+        self.output_file_row = Adw.EntryRow(title="Output file")
+        self.output_file_row.set_tooltip_text("Path to the text file")
+
+        self.zero_text_row = Adw.EntryRow(title="Text when timer reaches zero")
+        self.zero_text_row.set_tooltip_text("Only written to the output file")
+
         self.load_config_values()
 
         self.time_row.connect("changed", self.on_time_row_changed)
         self.command_row.connect("notify::text", self.on_command_change)
+        self.output_enabled_switch.connect("notify::active", self.on_output_enabled_change)
+        self.output_file_row.connect("notify::text", self.on_output_file_change)
+        self.zero_text_row.connect("notify::text", self.on_zero_text_change)
 
-        return [self.time_row, self.command_row]
-    
+        return [
+            self.time_row,
+            self.command_row,
+            self.output_enabled_row,
+            self.output_file_row,
+            self.zero_text_row
+        ]
+
     def load_config_values(self) -> None:
         settings = self.get_settings()
 
         self.time_row.set_value(settings.get("duration", 30))
         self.command_row.set_text(settings.get("command", ""))
+
+        self.output_enabled = settings.get("output_enabled", False)
+        self.output_enabled_switch.set_active(self.output_enabled)
+
+        output_file = settings.get("output_file", "")
+        self.output_file = Path(output_file).expanduser() if output_file else None
+        self.output_file_row.set_text(output_file)
+
+        self.zero_text = settings.get("zero_text", "00:00")
+        self.zero_text_row.set_text(self.zero_text)
+
+        self.output_file_row.set_sensitive(self.output_enabled)
+        self.zero_text_row.set_sensitive(self.output_enabled)
 
     def on_time_row_changed(self, *args) -> None:
         settings = self.get_settings()
@@ -158,6 +219,34 @@ class Countdown(ActionBase):
         self.set_settings(settings)
 
         self.show()
+
+    def on_output_enabled_change(self, *args) -> None:
+        settings = self.get_settings()
+        self.output_enabled = self.output_enabled_switch.get_active()
+        settings["output_enabled"] = self.output_enabled
+        self.set_settings(settings)
+
+        self.output_file_row.set_sensitive(self.output_enabled)
+        self.zero_text_row.set_sensitive(self.output_enabled)
+
+        if not self.output_enabled:
+            self.last_written = None
+
+    def on_output_file_change(self, *args) -> None:
+        settings = self.get_settings()
+        output_file = self.output_file_row.get_text().strip()
+
+        self.output_file = Path(output_file).expanduser() if output_file else None
+        settings["output_file"] = output_file
+        self.set_settings(settings)
+
+        self.last_written = None
+
+    def on_zero_text_change(self, *args) -> None:
+        settings = self.get_settings()
+        self.zero_text = self.zero_text_row.get_text()
+        settings["zero_text"] = self.zero_text
+        self.set_settings(settings)
 
     def on_command_change(self, *args) -> None:
         settings = self.get_settings()
