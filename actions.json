@@ -1,0 +1,42 @@
+{
+    "plugin": {
+        "description": "A countdown timer on a key, with a progress ring around the remaining time.",
+        "requirements": "Nothing."
+    },
+    "actions": {
+        "Countdown": {
+            "description": "Counts down from a set duration and draws the remaining time plus a progress ring on the key. Pressing starts it, pressing again pauses and resumes, holding resets it. On a dial, turning changes the duration by a second per step. It can run a command when it reaches zero and write the remaining time into a file for OBS.",
+            "settings": {
+                "duration": {
+                    "type": "integer",
+                    "default": 30,
+                    "description": "How long the countdown runs, in seconds.",
+                    "example": 300
+                },
+                "command": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Shell command to run once the countdown reaches zero. Empty runs nothing.",
+                    "example": "notify-send 'Time is up'"
+                },
+                "output_enabled": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Write the remaining time into a text file, so OBS or another program can show it."
+                },
+                "output_file": {
+                    "type": "string",
+                    "default": "",
+                    "description": "The file to write the remaining time into. Only used with output_enabled.",
+                    "example": "~/countdown.txt"
+                },
+                "zero_text": {
+                    "type": "string",
+                    "default": "00:00",
+                    "description": "What to write into the file once the countdown is finished. Only affects the file, not the key.",
+                    "example": "Back soon!"
+                }
+            }
+        }
+    }
+}
